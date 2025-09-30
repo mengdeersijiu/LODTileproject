@@ -166,9 +166,9 @@ public class MapCameraController : MonoBehaviour
         if (scroll != 0f)
         {
             Vector3 pos = cam.transform.position;
-
+            float heightFactor = pos.y / 100f;
             // 直接修改高度，没有平滑过渡
-            pos.y -= scroll * scrollSpeed;
+            pos.y -= scroll * scrollSpeed * heightFactor;
             pos.y = Mathf.Clamp(pos.y, minHeight, maxHeight);
 
             cam.transform.position = pos;

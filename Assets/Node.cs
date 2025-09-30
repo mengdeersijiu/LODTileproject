@@ -27,7 +27,6 @@ public class Node
 
     public Node[] children;
     public Node parent;
-    //public bool isLeaf => children == null;
     public bool isLeaf = true;
     public bool parentMerged;
 
@@ -46,7 +45,7 @@ public class Node
     private static float SPLIT_RATIO = 2.0f;
     private static float MERGE_RATIO = 3.0f;
     private static float HEIGHT_WEIGHT = 0.2f;
-    private static int MAX_Z = 8;
+    private static int MAX_Z = 15;
     private static float MAGIC_NUM = 2.0f;
 
     public static void Configure(float splitRatio, float mergeRatio, float heightWeight, int maxZ, float magicNum)
@@ -80,7 +79,7 @@ public class Node
     public static void UpdateAllLeavesState(Vector3 camPos)
     {
         splitCount = 0;
-        nextAllLeaves.Clear();
+        nextAllLeaves.Clear();//每次都更新
 
         while (currentAllLeaves.Count > 0)
         {
@@ -116,10 +115,6 @@ public class Node
 
         float lodSize = CalculateLodSize(camPos);
 
-        //if (size == lodSize)
-        //{
-        //    nextAllLeaves.Enqueue(this);
-        //}
         if (size > lodSize)
         {
             if (splitCount++ < eventFrameSplitCountMax)
@@ -209,10 +204,10 @@ public class Node
 
     private void Merge()
     {
-        if (children == null) return;
+        if (children == null)
+            return;
 
         nextAllLeaves.Enqueue(this);
-
         // 对每个子节点：通知渲染层「子树被移除」，让渲染层递归清理 propertyBlocks / 纹理引用 / nodeObj
         for (int i = 0; i < 4; i++)
         {
@@ -220,13 +215,11 @@ public class Node
             if (child != null)
             {
                 onNodeChanged?.Invoke(child, NodeChangeType.RemovedSubtree);
-
                 // 解除父引用并标记
                 child.parent = null;
                 child.parentMerged = true;
             }
         }
-
         // 丢弃子节点数据结构（逻辑层）
         children = null;
         isLeaf = true;
@@ -238,25 +231,22 @@ public class Node
     {
         // 节点中心（地形在 y=0 平面）
         Vector3 nodeCenter = new Vector3(x + size * 0.5f, 0f, z + size * 0.5f);
-
         // 计算带高度权重的距离
         float dx = camPos.x - nodeCenter.x;
         float dz = camPos.z - nodeCenter.z;
         float dy = camPos.y - nodeCenter.y;
         float d = Mathf.Sqrt(dx * dx + dz * dz + (dy * HEIGHT_WEIGHT) * (dy * HEIGHT_WEIGHT));
-
         // 节点对角线（XZ 平面）
         float diag = Mathf.Sqrt(2f) * size;
         float ratio = d / Mathf.Max(1f, diag) * MAGIC_NUM;
-
         // 最小叶子保护：到这一级别就不再往下切
         if (tileZ >= MAX_Z)
         {
             // 仅允许“保持或合并”，不再返回更小尺寸
-            if (ratio > MERGE_RATIO) return size * 2; // 远了，提示可以合并
+            if (ratio > MERGE_RATIO)
+                return size * 2; // 远了，提示可以合并
             return size; // 否则保持
         }
-
         // 分裂/合并 迟滞判定
         if (ratio < SPLIT_RATIO)
         {
@@ -297,7 +287,6 @@ public class Node
             // 非叶子节点：线框
             Gizmos.color = Color.gray;
             Gizmos.DrawWireCube(center, sizeVec);
-
             // 递归绘制子节点
             foreach (var child in children)
             {

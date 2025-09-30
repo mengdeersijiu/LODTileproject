@@ -19,7 +19,6 @@ public class Gizmos_Terrain : MonoBehaviour
     [SerializeField, Range(0.01f, 10f)] float splitRatio = 2.0f;   // 比例小于此值就细分 2.0
     [SerializeField, Range(0.01f, 10f)] float mergeRatio = 3.0f;   // 比例大于此值就合并（要大于 splitRatio）
     [SerializeField, Range(0f, 1f)] float heightWeight = 0.2f; // Y 高度对距离的权重 0.2
-    //[SerializeField] int minLeafSize = 8;     // 最小叶子块尺寸（2 的幂）
     [SerializeField] int maxZ = 15;     //最大的层级
     [SerializeField] float magicNum = 2.0f; //调节lod细分的
 
@@ -163,7 +162,10 @@ public class Gizmos_Terrain : MonoBehaviour
                 renderer.sharedMaterial = sharedMat;
 
                 MaterialPropertyBlock block = new MaterialPropertyBlock();
-                block.SetTexture("_MainTex", tileTex);
+                if (tileTex != null)
+                {
+                    block.SetTexture("_MainTex", tileTex);
+                }
                 renderer.SetPropertyBlock(block);
 
                 propertyBlocks[node] = block;
@@ -211,7 +213,8 @@ public class Gizmos_Terrain : MonoBehaviour
         {
             foreach (var child in node.children)
             {
-                if (child == null) continue;
+                if (child == null)
+                    continue;
                 UnloadNodeTextures(child, true);
             }
         }
@@ -237,9 +240,74 @@ public class Gizmos_Terrain : MonoBehaviour
         }
     }
 
+    //private Texture2D LoadTileTexture(int z, int x, int y)
+    //{
+    //    string key = GetTextureKey(z, x, y);
+    //    if (textureCache.TryGetValue(key, out Texture2D cachedTex))
+    //    {
+    //        if (textureReferenceCount.ContainsKey(key))
+    //            textureReferenceCount[key]++;
+    //        else
+    //            textureReferenceCount[key] = 1;
+
+    //        return cachedTex;
+    //    }
+
+    //    // 先尝试直接加载文件（并在加载成功后把它放入 cache）
+    //    Texture2D tex = TryLoadTile(z, x, y);
+    //    if (tex != null)
+    //    {
+    //        tex.name = key;
+    //        textureCache[key] = tex;
+    //        textureReferenceCount[key] = 1;
+    //        return tex;
+    //    }
+
+    //    int fallbackZ = z;
+    //    int fallbackX = x;
+    //    int fallbackY = y;
+
+    //    /*比如需要加载 “层级 5，坐标 (16,16)” 的高细节纹理，但加载失败。代码会自动尝试：
+    //    先找 “层级 4，坐标(8, 8)” 的纹理（如果有，就用它裁剪出层级 5 所需的区域）；
+    //    如果没有，再找 “层级 3，坐标(4, 4)” 的纹理；
+    //    以此类推，直到找到可用的低层级纹理或层级降为 0。*/
+    //    while (fallbackZ > 0)
+    //    {
+    //        fallbackZ -= 1;
+    //        fallbackX /= 2;
+    //        fallbackY /= 2;
+
+    //        string fallbackKey = GetTextureKey(fallbackZ, fallbackX, fallbackY);
+    //        if (textureCache.TryGetValue(fallbackKey, out Texture2D fallbackTex))
+    //        {
+    //            // 使用缓存的低级纹理进行裁剪（并生成一个专门的回退纹理 key）
+    //            Texture2D newTex = CreateTextureFromFallback(fallbackTex, z, x, y, fallbackZ);
+    //            return newTex;
+    //        }
+    //        else
+    //        {
+    //            Texture2D lowerTex = TryLoadTile(fallbackZ, fallbackX, fallbackY);
+    //            if (lowerTex != null)
+    //            {
+    //                lowerTex.name = fallbackKey;
+    //                textureCache[fallbackKey] = lowerTex;
+    //                textureReferenceCount[fallbackKey] = 1;
+
+    //                Texture2D newTex = CreateTextureFromFallback(lowerTex, z, x, y, fallbackZ);
+    //                return newTex;
+    //            }
+    //        }
+    //    }
+
+    //    // 找不到任何图，返回内置黑贴图（不要把 blackTexture 加入 cache）
+    //    return Texture2D.blackTexture;
+    //}
+
     private Texture2D LoadTileTexture(int z, int x, int y)
     {
         string key = GetTextureKey(z, x, y);
+
+        // 先查缓存
         if (textureCache.TryGetValue(key, out Texture2D cachedTex))
         {
             if (textureReferenceCount.ContainsKey(key))
@@ -250,16 +318,36 @@ public class Gizmos_Terrain : MonoBehaviour
             return cachedTex;
         }
 
-        // 先尝试直接加载文件（并在加载成功后把它放入 cache）
-        Texture2D tex = TryLoadTile(z, x, y);
-        if (tex != null)
+        // 启动异步加载（返回占位图，稍后替换）
+        StartCoroutine(LoadTileTextureAsync(z, x, y, key));
+        return Texture2D.blackTexture;
+        //return null;
+    }
+
+
+    private IEnumerator LoadTileTextureAsync(int z, int x, int y, string key)
+    {
+        // 磁盘路径
+        string path = $"file:///F:/otherdownload/AllWorld/{z}/{x}/{y}/tile.png";
+
+        using (var uwr = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(path))
         {
-            tex.name = key;
-            textureCache[key] = tex;
-            textureReferenceCount[key] = 1;
-            return tex;
+            yield return uwr.SendWebRequest();
+
+            if (uwr.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
+            {
+                Texture2D tex = UnityEngine.Networking.DownloadHandlerTexture.GetContent(uwr);
+                tex.name = key;
+
+                textureCache[key] = tex;
+                textureReferenceCount[key] = 1;
+
+                ApplyTextureToNode(z, x, y, tex);
+                yield break;
+            }
         }
 
+        // 主贴图加载失败，进入回退逻辑
         int fallbackZ = z;
         int fallbackX = x;
         int fallbackY = y;
@@ -273,29 +361,47 @@ public class Gizmos_Terrain : MonoBehaviour
             string fallbackKey = GetTextureKey(fallbackZ, fallbackX, fallbackY);
             if (textureCache.TryGetValue(fallbackKey, out Texture2D fallbackTex))
             {
-                // 使用缓存的低级纹理进行裁剪（并生成一个专门的回退纹理 key）
                 Texture2D newTex = CreateTextureFromFallback(fallbackTex, z, x, y, fallbackZ);
-                return newTex;
+                ApplyTextureToNode(z, x, y, newTex);
+                yield break;
             }
             else
             {
-                Texture2D lowerTex = TryLoadTile(fallbackZ, fallbackX, fallbackY);
-                if (lowerTex != null)
+                string fbPath = $"file:///F:/otherdownload/AllWorld/{fallbackZ}/{fallbackX}/{fallbackY}/tile.png";
+                using (var uwr = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(fbPath))
                 {
-                    lowerTex.name = fallbackKey;
-                    textureCache[fallbackKey] = lowerTex;
-                    textureReferenceCount[fallbackKey] = 1;
+                    yield return uwr.SendWebRequest();
+                    if (uwr.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
+                    {
+                        Texture2D lowerTex = UnityEngine.Networking.DownloadHandlerTexture.GetContent(uwr);
+                        lowerTex.name = fallbackKey;
 
-                    Texture2D newTex = CreateTextureFromFallback(lowerTex, z, x, y, fallbackZ);
-                    return newTex;
+                        textureCache[fallbackKey] = lowerTex;
+                        textureReferenceCount[fallbackKey] = 1;
+
+                        Texture2D newTex = CreateTextureFromFallback(lowerTex, z, x, y, fallbackZ);
+                        ApplyTextureToNode(z, x, y, newTex);
+                        yield break;
+                    }
                 }
             }
         }
-
-        // 找不到任何图，返回内置黑贴图（不要把 blackTexture 加入 cache）
-        return Texture2D.blackTexture;
     }
 
+    private void ApplyTextureToNode(int z, int x, int y, Texture2D tex)
+    {
+        foreach (var kvp in propertyBlocks)
+        {
+            if (kvp.Key.tileZ == z && kvp.Key.tileX == x && kvp.Key.tileY == y)
+            {
+                var renderer = kvp.Key.nodeObj.GetComponent<MeshRenderer>();
+                MaterialPropertyBlock block = kvp.Value;
+                block.SetTexture("_MainTex", tex);
+                renderer.SetPropertyBlock(block);
+                break;
+            }
+        }
+    }
 
 
     private Texture2D CreateTextureFromFallback(Texture2D sourceTex, int targetZ, int targetX, int targetY, int sourceZ)
@@ -306,7 +412,7 @@ public class Gizmos_Terrain : MonoBehaviour
         if (textureCache.TryGetValue(fallbackKey, out Texture2D existingTex))
         {
             Debug.Log($"复用回退纹理: {fallbackKey}");
-            string refKey = existingTex.name;
+
             if (textureReferenceCount.ContainsKey(fallbackKey))
                 textureReferenceCount[fallbackKey]++;
             else
@@ -354,7 +460,7 @@ public class Gizmos_Terrain : MonoBehaviour
     private Texture2D TryLoadTile(int z, int x, int y)
     {
         string key = GetTextureKey(z, x, y);
-        string externalPath = $"D:/Map/Tiles/{z}/{x}/{y}/tile.png";
+        string externalPath = $"F:/otherdownload/AllWorld/{z}/{x}/{y}/tile.png";
         if (System.IO.File.Exists(externalPath))
         {
             try
