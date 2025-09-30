@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 public class Gizmos_Terrain : MonoBehaviour
@@ -329,6 +330,8 @@ public class Gizmos_Terrain : MonoBehaviour
     {
         // 磁盘路径
         string path = $"file:///F:/otherdownload/AllWorld/{z}/{x}/{y}/tile.png";
+        string bingstr = XyzToBing(z,x,y);
+        string bingstrUrl = "https://ecn.t0.tiles.virtualearth.net/tiles/a"+bingstr+ ".jpeg?n=z&g=15368";
 
         using (var uwr = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(path))
         {
@@ -368,6 +371,8 @@ public class Gizmos_Terrain : MonoBehaviour
             else
             {
                 string fbPath = $"file:///F:/otherdownload/AllWorld/{fallbackZ}/{fallbackX}/{fallbackY}/tile.png";
+                string bingstr1 = XyzToBing(fallbackZ, fallbackX, fallbackY);
+                string bingstr1Url = "https://ecn.t0.tiles.virtualearth.net/tiles/a" + bingstr1 + ".jpeg?n=z&g=15368";
                 using (var uwr = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(fbPath))
                 {
                     yield return uwr.SendWebRequest();
@@ -402,6 +407,47 @@ public class Gizmos_Terrain : MonoBehaviour
             }
         }
     }
+
+    public static string XyzToBing(int z, int x, int y)
+    {
+        StringBuilder result = new StringBuilder();
+        double xCoord = x + 1;
+        double yCoord = y + 1;
+        int zAll = (int)Math.Pow(2, z);
+
+        for (int i = 1; i <= z; i++)
+        {
+            double z0 = zAll / Math.Pow(2, i - 1);
+
+            // 左上
+            if (xCoord / z0 <= 0.5 && yCoord / z0 <= 0.5)
+            {
+                result.Append("0");
+            }
+            // 右上
+            else if (xCoord / z0 > 0.5 && yCoord / z0 <= 0.5)
+            {
+                result.Append("1");
+                xCoord -= z0 / 2;
+            }
+            // 左下
+            else if (xCoord / z0 <= 0.5 && yCoord / z0 > 0.5)
+            {
+                result.Append("2");
+                yCoord -= z0 / 2;
+            }
+            // 右下
+            else if (xCoord / z0 > 0.5 && yCoord / z0 > 0.5)
+            {
+                result.Append("3");
+                xCoord -= z0 / 2;
+                yCoord -= z0 / 2;
+            }
+        }
+
+        return result.ToString();
+    }
+
 
 
     private Texture2D CreateTextureFromFallback(Texture2D sourceTex, int targetZ, int targetX, int targetY, int sourceZ)
